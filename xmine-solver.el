@@ -35,6 +35,7 @@ Set to 0 to allow as many steps as needed." :type 'integer)
 -2: yet to find out.")
 (defvar game-ended nil "Ended??")
 (defvar last-step nil "What's last step that led to this situation?")
+(defvar step 0 "Number of current step")
 
 (defun index(position)
   "Parameter position is (list x y) where x is in [1, xmine-width], \
@@ -49,7 +50,6 @@ y in [1, xmine-height]. Returns 0-based linear index."
 (defun act-on(position action) "'stomp/'flag on given position."
   (let ((index (index position)))
     (when index       ; responsible for updating the block in probe-field
-      (sleep-for slowness)
       (destructuring-bind (x y) position
         (if (eq action 'stomp)
             (let* ((ext (xmine-field-button-at x y))
@@ -123,7 +123,8 @@ Unsetting `really-random' picks a block surrounded by fewest smaller numbers at 
         (loop with k = (random n) and u-indx = -1 and arr-indx = -1
           while (< u-indx k) do         ; just randomly pick one
           (when (= (aref probe-field (incf arr-indx)) -2) (incf u-indx))
-          finally (act-on (reverse-index arr-indx) 'stomp))))))
+          finally (act-on (reverse-index arr-indx) 'stomp)))
+      )))
 (defun flag-dec-neighbor-numbers(pos)         ; side-effect: probe-field
   "Flag position and decrement its neighboring numbers. Invoked when one of x's neighbors has a new flag."
   (when (= (aref probe-field (index pos)) -2)
@@ -134,9 +135,18 @@ Unsetting `really-random' picks a block surrounded by fewest smaller numbers at 
           (mapcar
            '(lambda(x)(decf (aref probe-field (index (car x)))))
            nb))))))
+(defun update-step(thing)"Things to do after taking a step."
+  (setq last-step thing)
+  (message "S%d: %s" (incf step)
+           (case thing
+             (stomp "Prudent step")
+             (flag "Flag")
+             (random "Random shoot")))
+  (redraw-device)(sleep-for slowness))
 (defun scan-reduce()                    ;side-effect: probe-field, game-ended
   "Scans for unknown blocks with numbers around. Core algorithm resides herein."
-  (loop for vec-index below (length probe-field) do
+  (loop with stomp-or-flag = nil
+    for vec-index below (length probe-field) do
     (unless (minusp (aref probe-field vec-index)) ; For each unknown/blank neighbor
       (let* ((num (aref probe-field vec-index)) ; of a numbered block,
              (nb (delete-if-not 'minusp (neighbors (reverse-index vec-index))
@@ -147,28 +157,26 @@ Unsetting `really-random' picks a block surrounded by fewest smaller numbers at 
           (mapcar                       ; surrounded by one or more unknown blocks,
            '(lambda(x)(act-on (car x) 'stomp)) ; then stomp on all unknown neighbors
            (delete-if-not '(lambda(x)(= x -2)) nb :key 'cdr))
-          (setq last-step 'stomp)
-          (return))
+          (update-step 'stomp)(setq stomp-or-flag 'stomp))
          ((and (plusp num) (= nb-len num) ; elseif all remainings need to be flagged,
                (plusp (count -2 nb :key 'cdr)))
           (setf num 0)                  ; this block can now be treated as blank;
-          (mapcar                  ; flag all surrounding unknowns;
+          (mapcar                       ; flag all surrounding unknowns;
            '(lambda(x)                  ; propogate by decrement block numbers\ 
               (flag-dec-neighbor-numbers (car x))) ; around new flags.
            (delete-if-not '(lambda(x)(= x -2)) nb :key 'cdr))
-          (setq last-step 'flag)
-          (return)))))                  ; otherwise skip.
-    finally (setq last-step 'random)(random-poke)))             ; Nothing to be done for all unknown blocks: poke a random block
+          (update-step 'flag)(setq stomp-or-flag 'flag))))) ; otherwise skip.
+    finally                             ; Nothing to be done for all unknown blocks:
+    (unless stomp-or-flag               ; poke a random block
+      (update-step 'random)(random-poke))))
 
 (defun xmine-solve()                    ; top-level module
   (interactive)
   (xmine-field-create)
   (setq probe-field (make-vector (* xmine-width xmine-height) -2)
-        game-ended nil)
-  (loop with step = 0 until
-    (or (and (plusp max-step) (>= step max-step)) game-ended) do
-    (message "S%d" (incf step))
-    (scan-reduce)(redraw-device)
+        game-ended nil step 0)
+  (loop until (or (and (plusp max-step) (>= step max-step)) game-ended) do
+    (scan-reduce)
     finally
     (message
      "%s" (if (xmine-game-solved-p)
