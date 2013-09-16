@@ -38,8 +38,7 @@ Set to 0 to allow as many steps as needed." :type 'integer)
 (defvar game-ended nil "Ended??")
 (defvar last-step nil "What's last step that led to this situation?")
 (defvar step 0 "Number of current step")
-(defconst neighbors-def
-  (list '(-1 -1) '(-1 0) '(-1 1) '(0 -1) '(0 1) '(1 -1) '(1 0) '(1 1))
+(defconst neighbors-def '((-1 -1) (-1 0) (-1 1) (0 -1) (0 1) (1 -1) (1 0) (1 1))
   "Definition of relative neighors locations.")
 ; TODO: bind key for pause & quit-solve
 (defun index(position)
@@ -141,7 +140,7 @@ Unsetting `really-random' picks a block surrounded by fewest smaller numbers at 
             finally
             (return (act-on (reverse-index arr-indx) 'stomp)))
         (block with-heuristics          ; heuristic counter used to accelerate
-          (let* ((k (random (/ (* n %-of-mines) 30)))
+          (let* ((k (random (/ (* n %-of-mines) 45)))
                  (blanks                ; picking up a good spot with low scores
                   (loop with var = nil and count = 0
                     for x below (length probe-field)
@@ -175,11 +174,11 @@ Unsetting `really-random' picks a block surrounded by fewest smaller numbers at 
     (redraw-device)(sleep-for slowness)))
 (defun scan-reduce()
   "Scans for unknown blocks with numbers around. Core algorithm resides herein."
-  (loop with stomp-or-flag for vec-index below (length probe-field) do ; For each unknown/blank neighbor
+  (loop with stomp-or-flag for vec-index below (length probe-field) do ; For each
     (unless (or (> step max-step) (minusp (aref probe-field vec-index)))
-      (let* ((num (aref probe-field vec-index)) ; of a numbered block,
+      (let* ((num (aref probe-field vec-index)) ; unknown/blank neighbor
              (nb (delete-if-not 'minusp (neighbors (reverse-index vec-index))
-                                :key 'cdr))
+                                :key 'cdr)) ; of a numbered block,
              (nb-len (length nb)))      ; # neighboring flagged/unknown blocks>=num
         (cond
          ((and (zerop num) (plusp (count -2 nb :key 'cdr))) ; if a blank block is
@@ -199,8 +198,7 @@ Unsetting `really-random' picks a block surrounded by fewest smaller numbers at 
     (unless stomp-or-flag               ; poke a random block
       (update-step 'random (index (random-poke))))))
 (defun xmine-solve()                    ; top-level module
-  (interactive)
-  (xmine-field-create)
+  (interactive) (xmine-field-create)
   (setq probe-field (make-vector (* xmine-width xmine-height) -2)
         game-ended nil step 0)
   (loop until (or (and (plusp max-step) (>= step max-step)) game-ended) do
