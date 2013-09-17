@@ -1,5 +1,4 @@
 #!/usr/bin/perl -w
-
 # Copyright (c) 2012, Liu Lukai (liulukai@gmail.com)
 # All rights reserved.
 # 
@@ -35,115 +34,81 @@
 # expressed or implied, of the FreeBSD Project.
 
 use Modern::Perl "2013";
-use English '-no_match_vars';
-use feature ":5.10";
 use charnames ':full';
 use warnings;
 use diagnostics;
 use autodie;
-use Carp;
+use Carp qw(carp croak);
 binmode STDOUT,':utf8';
-binmode STDIN,':utf8';
 
-my %py2ch;	# Pinyin to Hanzi, each value is an array
-my %ch2py;	# Hanzi to Pinyin
-my @chengyu;
-sub buildPY2Chr{	# init, call once
-   open my $fd, '<:utf8', 'ChinesePinyin.txt' or croak 'Cannot open ChinesePinyin.txt';
-   my $pat='(?<py>[a-zA-Z]*)(?<chs>.*)';
+our (%py2ch, %ch2py, @chengyu);
+
+sub buildPY2Chr{
+   return if %py2ch;	# init, call once
+   open my $fd, '<:utf8', 'ChinesePinyin.txt'
+   	or croak 'Cannot open ChinesePinyin.txt';
    while(<$fd>){
 	next if $_=~qr/^\s.*$/;
-	$_=~s/\s//g; $_=~qr/$pat/;
-	my @chs;
-	foreach(0 .. length($+{chs})-1){
-	   my $cur=substr $+{chs},$_,1;
-	   push @chs, $cur;
-	   $ch2py{+$cur}=$+{py};
-	}
-	@{$py2ch{$+{py}}}=@chs;
+	my @spt=split ' ',$_;
+	my ($py,@hz)=($spt[0],
+	   split '', join '', @spt[1..scalar @spt-1]);
+	@{$py2ch{$py}}=@hz;
+	push @{$ch2py{$_}},$py for @hz;
    }
    close $fd;
 }
 
 sub buildChYu{
-   open my $fd,'<:utf8', 'ChineseChengyu.txt' or croak 'Cannot open ChineseChengyu.txt';
+   return if @chengyu;
+   open my $fd,'<:utf8', 'ChineseChengyu.txt'
+   	or croak 'Cannot open ChineseChengyu.txt';
    while(<$fd>){
-   	$_=~s/\s.*//;
-   	push @chengyu, $_;
+	$_=~s/\s.*//;
+	push @chengyu, $_;
    }
+   close $fd;
 }
 
-sub indexChrs{
-   my $chr=shift;
-   my @chrs;
-   printf "::%x(%s)\n", ord $chr, $chr;
-   while(my ($k,$v)=each %py2ch){
-	foreach(@{$v}){
-	   if(ord $_ == ord $chr){
-		say 'found '.$_.'=='.$chr.': '.$k;
-		foreach(@{$v}){push @chrs,$_;}
-		last;
-	   }
+sub rmChengyuEntry{
+   my ($word,$start)=shift;
+   foreach($start//0 .. @chengyu){
+   	my $cur=\$chengyu[$_];
+   	if(defined $cur and !($cur cmp $word)){
+   	   undef $cur; last;
 	}
    }
-   return @chrs;
+   $word;
 }
 
 sub nextChengyu{
    my $word=shift;
    # get characters with same pronounciation with last character of $word
    my $lastCh=substr $word,-2,1;
-   my $pron=$ch2py{$lastCh};
+   # for Duo Yin Zi (multiple pronounciations for one character),
+   # choose one pronounciation at random
+   my $prons=\@{$ch2py{$lastCh}};
+   my $pron=$$prons[int rand scalar @$prons];
    croak "$lastCh not found in dictionary??" if !defined $pron;
    # Chengyu are partially alphabetically ordered: 
    # characters with same pronounciation are grouped together
-   my $start=0; my @collection;
-   my $counter=0;
+   my ($start,$counter)=(0,0); my @collection;
    foreach(@chengyu){
    	next if !defined $_;
-   	my $cur=$ch2py{+substr $_,0,1};
+   	my $candy=\@{$ch2py{+substr $_,0,1}};
+   	my $cur=$$candy[int rand scalar @$candy];
 	next if !defined $cur or $start==0 && ($cur cmp $pron);
 	$start=$counter if $start==0;
 	++$counter;
 	push @collection,$_;
 	last if !defined $cur or ($cur cmp $pron);
    }
-   my $index=int rand scalar @collection;
-   my $res=$collection[$index];
-   $counter=0;
-   foreach(@chengyu){
-   	next if ++$counter<$start;
-   	if(defined $chengyu[$counter] and defined $res and !($chengyu[$counter] cmp $res)){
-	   undef $chengyu[$counter]; 
-	   last;
-	}
-   }
-   return $res;
-}
-
-sub prtTable{
-   my $counter=0;
-   local $,='*';
-   while(my ($k,$v)=each %py2ch and ++$counter<10){
-   	print $k.': ';
-   	foreach(@{$v}){printf "%x(%s),", ord $_, $_;}
-   	print "\n";
-   }
-   $counter=0;
-   while(my ($k,$v)=each %ch2py and ++$counter<10){
-   	say $k.'->'.$v;
-   }
+   rmChengyuEntry $collection[int rand scalar @collection],$start;
 }
 
 sub main{
-   buildPY2Chr;
-   buildChYu;
-   my $cur=$chengyu[int rand scalar @chengyu];
-   print $cur;
-   for(1 .. $ARGV[0]){
-	$cur=nextChengyu $cur;
-	print $cur;
-   }
+   buildPY2Chr; buildChYu;
+   print rmChengyuEntry my $cur=$chengyu[int rand scalar @chengyu];
+   print $cur=nextChengyu $cur for 1..$ARGV[0] ;
 }
 
 exit main() ? 0 : 1;
