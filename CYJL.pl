@@ -33,7 +33,6 @@
 # interpreted as representing official policies, either
 # expressed or implied, of the FreeBSD Project.
 
-use Modern::Perl "2013";
 use charnames ':full';
 use warnings;
 use diagnostics;
@@ -103,6 +102,16 @@ sub nextChengyu{
 	last if !defined $cur or ($cur cmp $pron);
    }
    rmChengyuEntry $collection[int rand scalar @collection],$start;
+}
+
+sub chkChengyuEntries{
+   my %unknowns;
+   foreach(@chengyu){
+   	my ($fst,$last)=(substr($_,0,1),substr($_,-2,1));
+   	$unknowns{$fst}=1 unless defined $ch2py{$fst};
+   	$unknowns{$last}=1 unless defined $ch2py{$last};
+   }
+   print for keys %unknowns;
 }
 
 sub main{
