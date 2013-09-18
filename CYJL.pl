@@ -38,6 +38,7 @@ use warnings;
 use diagnostics;
 use autodie;
 use Carp qw(carp croak);
+use utf8;
 binmode STDOUT,':utf8';
 
 sub main;
@@ -129,24 +130,36 @@ sub nextChengyu{   # get characters with same pronounciation with last character
 }
 
 sub chkChengyuEntries{
-   my %unknowns;
+   my ($counter,%unknowns)=1;
    foreach(@chengyu){
-   	my ($fst,$last)=(substr($_,0,1),substr $_,-1);
-   	$unknowns{$fst}=1 unless defined $ch2py{$fst};
-   	$unknowns{$last}=1 unless defined $ch2py{$last};
+   	my ($fst,$last)=(substr($_,1,1),substr $_,-2,1);
+   	$unknowns{$fst}=$counter unless defined $ch2py{$fst};
+   	$unknowns{$last}=$counter unless defined $ch2py{$last};
+   	++$counter;
    }
-   print for keys %unknowns;
+   while(my ($k,$v)=each %unknowns){
+	print "$v:$k\n";
+   }
 }
 
 sub main{
    buildPY2Chr; buildChYu;
    print rmChengyuEntry my $cur=$chengyu[int rand scalar @chengyu];
    print "\n";
-   for(2 ..$ARGV[0]){
+   my ($cnt,$prev,$prev2)=2;
+   until($cnt>$ARGV[0]){
+	$prev2=$prev; $prev=$cur;
 	($cur,$pron)=nextChengyu $cur;
-	print "[$_]$pron:\t";
+	print "[$cnt]$pron:\t"; ++$cnt;
+	print defined($cur) ? "$cur\n" : "...继续无力\n";
+	next if defined $cur;
+	my $counter=0; # try 1-step backtracking.
+	do{
+	   ($cur,$pron)=nextChengyu $prev2;
+	}until ++$counter>5 || defined $cur;
 	last unless defined $cur;
-	print "$cur\n";
+	$cnt-=2;
+	print "[$cnt]$pron:\t$cur\n";
    }
-   print "...cannot continue\n" unless defined $cur;
+   !defined $cur;
 }
