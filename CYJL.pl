@@ -41,8 +41,7 @@ use Carp qw(carp croak);
 use utf8;
 binmode STDOUT,':utf8';
 
-sub main;
-exit main() ? 0 : 1;
+sub main; exit !main;
 
 our (%py2ch, %ch2py, @chengyu, %chengyu);
 
@@ -76,9 +75,8 @@ sub buildChYu{
 sub rmChengyuEntry{  # from array
    my ($word,$start)=shift;
    foreach($start//0 .. @chengyu){
-   	$_=\$chengyu[$_];
-   	if(defined $_ and !($_ cmp $word)){
-   	   undef $_; last;
+   	if(defined $chengyu[$_] && !($chengyu[$_] cmp $word)){
+   	   undef $chengyu[$_]; last;
 	}
    }
    $word;
@@ -86,7 +84,7 @@ sub rmChengyuEntry{  # from array
 
 sub nextChengyu{   # get characters with same pronounciation with last character of $word
    my $word=shift;
-   my $lastCh=substr $word,-1,1;
+   my $lastCh=substr $word,-1;
    my ($prons,$candy,$counter)=(\@{$ch2py{$lastCh}},
    	\@{$chengyu{$lastCh}}, 0);
    if(defined $candy){	# prioritize Chengyu with same leading character
@@ -132,13 +130,23 @@ sub nextChengyu{   # get characters with same pronounciation with last character
 sub chkChengyuEntries{
    my ($counter,%unknowns)=1;
    foreach(@chengyu){
-   	my ($fst,$last)=(substr($_,1,1),substr $_,-2,1);
+   	my ($fst,$last)=(substr($_,0,1),substr $_,-1);
    	$unknowns{$fst}=$counter unless defined $ch2py{$fst};
    	$unknowns{$last}=$counter unless defined $ch2py{$last};
    	++$counter;
    }
    while(my ($k,$v)=each %unknowns){
 	print "$v:$k\n";
+   }
+   undef %unknowns; $counter=1;
+   foreach(@chengyu){
+   	if(defined $unknowns{$_}){
+   	   print "$counter: $_\n";
+   	   --$counter;
+	}else{
+	   $unknowns{$_}=1;
+	}
+	++$counter;
    }
 }
 
@@ -150,16 +158,16 @@ sub main{
    until($cnt>$ARGV[0]){
 	$prev2=$prev; $prev=$cur;
 	($cur,$pron)=nextChengyu $cur;
-	print "[$cnt]$pron:\t"; ++$cnt;
+	printf "[%-3d]%-6s ",$cnt++,$pron;
 	print defined($cur) ? "$cur\n" : "...继续无力\n";
 	next if defined $cur;
-	my $counter=0; # try 1-step backtracking.
+	my $counter=0; # 1-step backtracking.
 	do{
 	   ($cur,$pron)=nextChengyu $prev2;
-	}until ++$counter>5 || defined $cur;
+	}until $cur // ++$counter>5;
 	last unless defined $cur;
 	$cnt-=2;
-	print "[$cnt]$pron:\t$cur\n";
+	printf "[%-3d]%-6s %s\n",$cnt,$pron,$cur;
    }
-   !defined $cur;
+   defined $cur;
 }
