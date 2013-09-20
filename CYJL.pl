@@ -52,7 +52,7 @@ sub buildPY2Chr{
    while(<$fd>){
 	next if $_=~qr/^\s.*$/;
 	my @spt=split ' ',$_;
-	my ($py,@hz)=($spt[0], split '', join '', @spt[1..scalar @spt-1]);
+	my ($py,@hz)=($spt[0], split '', join '', @spt[1..@spt-1]);
 	@{$py2ch{$py}}=@hz;
 	push @{$ch2py{$_}},$py for @hz;
    }
@@ -92,10 +92,10 @@ sub nextChengyu{   # get characters with same pronounciation with last character
 	   if(defined $_ and defined $$_){++$counter; last;}
 	}
 	if($counter){
-	   $pron=$$prons[int rand scalar @$prons];
+	   $pron=$$prons[int rand @$prons];
 	   my ($index, $word);
 	   do{	   # pick an available chengyu
-		$index=int rand scalar @{$candy};
+		$index=int rand @{$candy};
 		$word=$$candy[$index];
 	   }until defined $$word;
 	   undef $$candy[$index];
@@ -106,7 +106,7 @@ sub nextChengyu{   # get characters with same pronounciation with last character
    my ($start,$tries)=(0,0);
    my ($pron,@collection);
    do{
-	$pron=$$prons[int rand scalar @$prons];
+	$pron=$$prons[int rand @$prons];
 	carp "$lastCh not found in dictionary??" if !defined $pron;
 	# Chengyu are partially alphabetically ordered: 
 	# characters with same pronounciation are grouped together
@@ -121,8 +121,8 @@ sub nextChengyu{   # get characters with same pronounciation with last character
 	   last if !defined $cur or ($cur cmp $pron);
 	}
 	++$tries;
-   }until scalar @collection or $tries>scalar @$prons;
-   return (scalar @collection?
+   }until @collection or $tries>@$prons;
+   return (@collection?
    	rmChengyuEntry($collection[int rand @collection],$start)
    	: undef, $pron);
 }
