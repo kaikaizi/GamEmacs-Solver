@@ -89,7 +89,7 @@ sub nextChengyu{   # get characters with same pronounciation with last character
    	\@{$chengyu{$lastCh}}, 0);
    if(defined $candy){	# prioritize Chengyu with same leading character
 	foreach(@$candy){
-	   if(defined){++$counter; last;}
+	   if(defined $_ and defined $$_){++$counter; last;}
 	}
 	if($counter){
 	   $pron=$$prons[int rand scalar @$prons];
@@ -99,7 +99,7 @@ sub nextChengyu{   # get characters with same pronounciation with last character
 		$word=$$candy[$index];
 	   }until defined $$word;
 	   undef $$candy[$index];
-	   return ($$word, $pron);
+	   return (rmChengyuEntry($$word), $pron);
 	}
    }
    # pick one pronounciation for Duo Yin Zi
@@ -113,7 +113,7 @@ sub nextChengyu{   # get characters with same pronounciation with last character
 	foreach(@chengyu){
 	   next if !defined $_;
 	   $candy=\@{$ch2py{+substr $_,0,1}};
-	   my $cur=$$candy[int rand scalar @$candy];
+	   my $cur=$$candy[int rand @$candy];
 	   next if !defined $cur or $start==0 && ($cur cmp $pron);
 	   $start=$counter if $start==0;
 	   ++$counter;
@@ -123,7 +123,7 @@ sub nextChengyu{   # get characters with same pronounciation with last character
 	++$tries;
    }until scalar @collection or $tries>scalar @$prons;
    return (scalar @collection?
-   	rmChengyuEntry($collection[int rand scalar @collection],$start)
+   	rmChengyuEntry($collection[int rand @collection],$start)
    	: undef, $pron);
 }
 
@@ -152,16 +152,15 @@ sub chkChengyuEntries{
 
 sub main{
    buildPY2Chr; buildChYu;
-   print rmChengyuEntry my $cur=$chengyu[int rand scalar @chengyu];
-   print "\n";
-   my ($cnt,$prev,$prev2)=2;
+   print rmChengyuEntry(my $cur=$chengyu[int rand @chengyu])."\n";
+   my ($cnt,$prev,$prev2,$counter)=2;
    until($cnt>$ARGV[0]){
 	$prev2=$prev; $prev=$cur;
 	($cur,$pron)=nextChengyu $cur;
 	printf "[%-3d]%-6s ",$cnt++,$pron;
 	print defined($cur) ? "$cur\n" : "...继续无力\n";
 	next if defined $cur;
-	my $counter=0; # 1-step backtracking.
+	$counter=0; # 1-step backtracking.
 	do{
 	   ($cur,$pron)=nextChengyu $prev2;
 	}until $cur // ++$counter>5;
