@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# Copyright (c) 2012, Liu Lukai (liulukai@gmail.com)
+# Copyright (c) 2013, Liu Lukai (liulukai@gmail.com)
 # All rights reserved.
 # 
 # Redistribution and use in source and binary forms, with or
@@ -89,7 +89,7 @@ sub nextChengyu{   # get characters with same pronounciation with last character
    	\@{$chengyu{$lastCh}}, 0);
    if(defined $candy){	# prioritize Chengyu with same leading character
 	foreach(@$candy){
-	   if(defined $_ and defined $$_){++$counter; last;}
+	   if(defined $$_){++$counter; last;}
 	}
 	if($counter){
 	   $pron=$$prons[int rand @$prons];
