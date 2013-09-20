@@ -88,9 +88,7 @@ sub nextChengyu{   # get characters with same pronounciation with last character
    my ($prons,$candy,$counter)=(\@{$ch2py{$lastCh}},
    	\@{$chengyu{$lastCh}}, 0);
    if(defined $candy){	# prioritize Chengyu with same leading character
-	foreach(@$candy){
-	   if(defined $$_){++$counter; last;}
-	}
+	grep {++$counter if defined $$_} @$candy;
 	if($counter){
 	   $pron=$$prons[int rand @$prons];
 	   my ($index, $word);
@@ -125,29 +123,6 @@ sub nextChengyu{   # get characters with same pronounciation with last character
    return (@collection?
    	rmChengyuEntry($collection[int rand @collection],$start)
    	: undef, $pron);
-}
-
-sub chkChengyuEntries{
-   my ($counter,%unknowns)=1;
-   foreach(@chengyu){
-   	my ($fst,$last)=(substr($_,0,1),substr $_,-1);
-   	$unknowns{$fst}=$counter unless defined $ch2py{$fst};
-   	$unknowns{$last}=$counter unless defined $ch2py{$last};
-   	++$counter;
-   }
-   while(my ($k,$v)=each %unknowns){
-	print "$v:$k\n";
-   }
-   undef %unknowns; $counter=1;
-   foreach(@chengyu){
-   	if(defined $unknowns{$_}){
-   	   print "$counter: $_\n";
-   	   --$counter;
-	}else{
-	   $unknowns{$_}=1;
-	}
-	++$counter;
-   }
 }
 
 sub main{
