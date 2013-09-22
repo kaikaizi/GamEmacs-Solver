@@ -33,8 +33,8 @@
 # interpreted as representing official policies, either
 # expressed or implied, of the FreeBSD Project.
 
-use List::MoreUtils qw(uniq any first_index);
-use Scalar::Util 'dualvar';
+use List::MoreUtils qw(uniq any first_index last_index);
+use Scalar::Util qw(dualvar looks_like_number);
 use charnames ':full';
 use Modern::Perl;
 use diagnostics;
@@ -45,7 +45,7 @@ binmode STDOUT,':utf8';
 
 sub main; exit !main;
 
-our (%py2ch, %ch2py, @chengyu, @chengyu1stPY, %chengyu);
+our (%py2ch, %ch2py, %chengyu, @chengyu, @chengyu1stPY);
 
 sub buildPY2Chr{
    return if %py2ch;	# init, call once
@@ -59,12 +59,8 @@ sub buildPY2Chr{
 	push @{$ch2py{$_}},$py for @hz;
    }
    close $fd;
-   while(my ($k,$v)=each %ch2py){
-   	$v=uniq $v;
-   }
-   while(my ($k,$v)=each %py2ch){
-   	$v=uniq $v;
-   }
+   while(my ($k,$v)=each %ch2py){$v=uniq $v}
+   while(my ($k,$v)=each %py2ch){$v=uniq $v}
 }
 
 sub transPyNum{
@@ -78,7 +74,7 @@ sub transPyNum{
 sub buildChYu;
 sub annotateChengyuPinyin{ # annotate Pinyin of first character of all @chengyus
    return if @chengyu1stPY;
-   buildPY2Chr; buildChYu;
+   buildPY2Chr unless %py2ch; buildChYu unless @chengyu;
    my ($counter,$cur,$ord)=(0,0,0);  # experimental sub
    foreach(@chengyu){
    	my @pys=sort {transPyNum($a)<=>transPyNum($b)} @{$ch2py{substr $_,0,1}};
@@ -100,8 +96,7 @@ sub annotateChengyuPinyin{ # annotate Pinyin of first character of all @chengyus
 	   }
 	}
    }continue{++$counter;}
-   push @chengyu1stPY,dualvar $counter-1,transPyNum 'zz';  # sentinal
-#    printf("%d:%s\n",$_+1,$_.'')for@chengyu1stPY;
+   push @chengyu1stPY,dualvar $counter-1,'zz';  # sentinal
 }
 
 sub buildChYu{
@@ -112,7 +107,7 @@ sub buildChYu{
    while(<$fd>){
 	$_=~s/\s.*\n//;
 	next if /$^/;
-	push @chengyu, ::Scalar::Util::dualvar $counter++,$_;
+	push @chengyu, dualvar $counter++,$_;
 	# and hash of chengyu by leading character, ref-valued.
 	push @{$chengyu{substr $_,0,1}}, \$chengyu[-1];
    }
@@ -128,52 +123,77 @@ sub rmChengyuEntry{  # from array
 sub nextChengyu{   # get characters with same pronounciation with last character of $word
    my $word=shift;
    my $lastCh=substr $word,-1;
-   my ($prons,$candy,$counter,$pron)=(\@{$ch2py{$lastCh}},
-   	\@{$chengyu{$lastCh}}, 0);
+   my ($candy,$counter,$pron)=(\@{$chengyu{$lastCh}}, 0);
    if(defined $candy){	# prioritize Chengyu with same leading character
 	if(any {defined $$_} @$candy){
-	   $pron=$$prons[rand @$prons];
 	   my ($index, $word);
 	   do{	   # pick an available chengyu
 		$index=rand @{$candy};
 		$word=$$candy[$index];
 	   }until defined $$word;
+	   $pron=$chengyu1stPY[last_index {$$word+0>=$_+0} @chengyu1stPY].'';
 	   undef $$candy[$index];
 	   undef @$candy unless any {defined $$_} @$candy;
 	   return (rmChengyuEntry($$word), $pron);
 	}
    }
-   # pick one pronounciation for last character
-   my ($start,$tries,@collection)=(0,0);
-   do{
+   my ($prons,$tries,$index,@collection)=(\@{$ch2py{$lastCh}},0);
+   do{   # pick one pronounciation for last character
 	$pron=$$prons[rand @$prons];
 	carp "$lastCh not found in dictionary??" if !defined $pron;
-	my $index=first_index {!($pron cmp $_.'')} @chengyu1stPY;
-	for($chengyu1stPY[$index]+0..$chengyu1stPY[$index+1]+0){
+	$index=first_index {!($pron cmp $_.'')} @chengyu1stPY;
+	for(($chengyu1stPY[$index]+0)..($chengyu1stPY[$index+1]+0)){
 	   push @collection, $chengyu[$_] if defined $chengyu[$_];
 	}
 	++$tries;
    }until @collection or $tries>@$prons;
-   return (@collection?rmChengyuEntry$collection[rand @collection]:undef, $pron);
+   (@collection?rmChengyuEntry$collection[rand @collection]:undef, $pron);
 }
 
 sub main{
    annotateChengyuPinyin;
-   print rmChengyuEntry(my $cur=$chengyu[rand @chengyu])."\n";
-   my ($cnt,$prev,$prev2,$counter,$pron)=2;
+   use Encode 'decode';
+   my ($cnt,$prev,$prev2,$counter,$pron,$cur,%history)=2;
+   if(@ARGV>1){
+	$cur=decode 'utf8',$ARGV[1];
+	$counter=first_index{!($cur cmp $_)} @chengyu;
+	defined $counter?
+	   $cur=dualvar($counter,$cur) : undef $cur;
+   }
+   $cur//=$chengyu[rand @chengyu];
+   printf "[1  ]%-6s %s\n",'',rmChengyuEntry($cur);
+   $history{1}=$cur;
    until($cnt>$ARGV[0]){
 	$prev2=$prev; $prev=$cur;
 	($cur,$pron)=nextChengyu $cur;
 	printf "[%-3d]%-6s ",$cnt++,$pron;
 	print defined($cur) ? "$cur\n" : "...继续无力\n";
-	next if defined $cur;
+	if(defined $cur){
+	   $history{$cnt-1}=$cur; next;
+	}
 	$counter=0; # 1-step backtracking.
 	do{
 	   ($cur,$pron)=nextChengyu $prev2;
 	}until $cur // ++$counter>5;
 	last unless defined $cur;
 	$cnt-=2;
-	printf "[%-3d]%-6s %s\n",$cnt,$pron,$cur;
+	printf "[%-3d]%-6s %s\n",$cnt,$pron,$history{$cnt-1}=$cur;
    }
+   open my $fd,'<:utf8', 'ChineseChengyu.txt'	# definition lookup
+	or croak 'Cannot open ChineseChengyu.txt';
+   print "词义解释：\n\$";
+   while(<STDIN>){
+	my $option=$_;
+	print '?' unless(looks_like_number $option);
+	next unless defined $history{0+$option};
+	seek $fd,0,0; $cnt=0;
+	while($cnt<$history{0+$option}){
+	   next if <$fd>=~/^\s*$/;
+	   ++$cnt;
+	}
+	print $_=<$fd>;
+	print '$';
+   }
+   close $fd;
    defined $cur;
 }
