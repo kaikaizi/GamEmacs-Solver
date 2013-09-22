@@ -33,8 +33,10 @@
 # interpreted as representing official policies, either
 # expressed or implied, of the FreeBSD Project.
 
+use List::MoreUtils qw(uniq any first_index);
+use Scalar::Util 'dualvar';
 use charnames ':full';
-use warnings;
+use Modern::Perl;
 use diagnostics;
 use autodie;
 use Carp qw(carp croak);
@@ -43,7 +45,7 @@ binmode STDOUT,':utf8';
 
 sub main; exit !main;
 
-our (%py2ch, %ch2py, @chengyu, %chengyu);
+our (%py2ch, %ch2py, @chengyu, @chengyu1stPY, %chengyu);
 
 sub buildPY2Chr{
    return if %py2ch;	# init, call once
@@ -57,15 +59,60 @@ sub buildPY2Chr{
 	push @{$ch2py{$_}},$py for @hz;
    }
    close $fd;
+   while(my ($k,$v)=each %ch2py){
+   	$v=uniq $v;
+   }
+   while(my ($k,$v)=each %py2ch){
+   	$v=uniq $v;
+   }
+}
+
+sub transPyNum{
+   state %PyNum;
+   my ($py,$num)=(shift,0);
+   return $PyNum{$py} if defined $PyNum{$py};
+   $num=$num*26+(ord substr $py,$_,1)-ord('a') for 0..length($py)-1;
+   $num*=26 for length $py .. 6;
+   $PyNum{$py}=$num;
+}
+sub buildChYu;
+sub annotateChengyuPinyin{ # annotate Pinyin of first character of all @chengyus
+   return if @chengyu1stPY;
+   buildPY2Chr; buildChYu;
+   my ($counter,$cur,$ord)=(0,0,0);  # experimental sub
+   foreach(@chengyu){
+   	my @pys=sort {transPyNum($a)<=>transPyNum($b)} @{$ch2py{substr $_,0,1}};
+   	croak "ch2py map empty for $_" unless @pys;
+   	if(!@chengyu1stPY){
+   	   push @chengyu1stPY,dualvar $counter,$pys[0];
+   	   $ord=transPyNum $chengyu1stPY[0].'';
+	}else{
+	   if(1==@pys){
+		push @chengyu1stPY,dualvar $counter,$pys[0]
+		   if($chengyu1stPY[-1].'' cmp $pys[0]);
+		next;
+	   }
+	   my $index=first_index {transPyNum($_)>=$ord} @pys;
+	   my ($a,$b)=(transPyNum($chengyu1stPY[-1].''), transPyNum $pys[$index]);
+	   if($a<$b){
+		push @chengyu1stPY,dualvar $counter,$pys[$index];
+		$ord=transPyNum $chengyu1stPY[-1].'';
+	   }
+	}
+   }continue{++$counter;}
+   push @chengyu1stPY,dualvar $counter-1,transPyNum 'zz';  # sentinal
+#    printf("%d:%s\n",$_+1,$_.'')for@chengyu1stPY;
 }
 
 sub buildChYu{
-   return if @chengyu;
+   return if @chengyu && !%py2ch;
    open my $fd,'<:utf8', 'ChineseChengyu.txt'
    	or croak 'Cannot open ChineseChengyu.txt';
+   my $counter=0;
    while(<$fd>){
 	$_=~s/\s.*\n//;
-	push @chengyu, $_;
+	next if /$^/;
+	push @chengyu, ::Scalar::Util::dualvar $counter++,$_;
 	# and hash of chengyu by leading character, ref-valued.
 	push @{$chengyu{substr $_,0,1}}, \$chengyu[-1];
    }
@@ -73,62 +120,47 @@ sub buildChYu{
 }
 
 sub rmChengyuEntry{  # from array
-   my ($word,$start)=shift;
-   foreach($start//0 .. @chengyu){
-   	if(defined $chengyu[$_] && !($chengyu[$_] cmp $word)){
-   	   undef $chengyu[$_]; last;
-	}
-   }
+   my $word=shift;
+   undef $chengyu[$word+0];
    $word;
 }
 
 sub nextChengyu{   # get characters with same pronounciation with last character of $word
    my $word=shift;
    my $lastCh=substr $word,-1;
-   my ($prons,$candy,$counter)=(\@{$ch2py{$lastCh}},
+   my ($prons,$candy,$counter,$pron)=(\@{$ch2py{$lastCh}},
    	\@{$chengyu{$lastCh}}, 0);
    if(defined $candy){	# prioritize Chengyu with same leading character
-	grep {++$counter if defined $$_} @$candy;
-	if($counter){
-	   $pron=$$prons[int rand @$prons];
+	if(any {defined $$_} @$candy){
+	   $pron=$$prons[rand @$prons];
 	   my ($index, $word);
 	   do{	   # pick an available chengyu
-		$index=int rand @{$candy};
+		$index=rand @{$candy};
 		$word=$$candy[$index];
 	   }until defined $$word;
 	   undef $$candy[$index];
+	   undef @$candy unless any {defined $$_} @$candy;
 	   return (rmChengyuEntry($$word), $pron);
 	}
    }
-   # pick one pronounciation for Duo Yin Zi
-   my ($start,$tries)=(0,0);
-   my ($pron,@collection);
+   # pick one pronounciation for last character
+   my ($start,$tries,@collection)=(0,0);
    do{
-	$pron=$$prons[int rand @$prons];
+	$pron=$$prons[rand @$prons];
 	carp "$lastCh not found in dictionary??" if !defined $pron;
-	# Chengyu are partially alphabetically ordered: 
-	# characters with same pronounciation are grouped together
-	foreach(@chengyu){
-	   next if !defined $_;
-	   $candy=\@{$ch2py{+substr $_,0,1}};
-	   my $cur=$$candy[int rand @$candy];
-	   next if !defined $cur or $start==0 && ($cur cmp $pron);
-	   $start=$counter if $start==0;
-	   ++$counter;
-	   push @collection,$_;
-	   last if !defined $cur or ($cur cmp $pron);
+	my $index=first_index {!($pron cmp $_.'')} @chengyu1stPY;
+	for($chengyu1stPY[$index]+0..$chengyu1stPY[$index+1]+0){
+	   push @collection, $chengyu[$_] if defined $chengyu[$_];
 	}
 	++$tries;
    }until @collection or $tries>@$prons;
-   return (@collection?
-   	rmChengyuEntry($collection[int rand @collection],$start)
-   	: undef, $pron);
+   return (@collection?rmChengyuEntry$collection[rand @collection]:undef, $pron);
 }
 
 sub main{
-   buildPY2Chr; buildChYu;
-   print rmChengyuEntry(my $cur=$chengyu[int rand @chengyu])."\n";
-   my ($cnt,$prev,$prev2,$counter)=2;
+   annotateChengyuPinyin;
+   print rmChengyuEntry(my $cur=$chengyu[rand @chengyu])."\n";
+   my ($cnt,$prev,$prev2,$counter,$pron)=2;
    until($cnt>$ARGV[0]){
 	$prev2=$prev; $prev=$cur;
 	($cur,$pron)=nextChengyu $cur;
