@@ -54,7 +54,7 @@ sub buildPY2Chr{
    while(<$fd>){
 	next if $_=~qr/^\s.*$/;
 	my @spt=split ' ',$_;
-	my ($py,@hz)=($spt[0], split '', join '', @spt[1..@spt-1]);
+	my ($py,@hz)=(lc $spt[0], split '', join '', @spt[1..@spt-1]);
 	@{$py2ch{$py}}=@hz;
 	push @{$ch2py{$_}},$py for @hz;
    }
@@ -150,18 +150,21 @@ sub nextChengyu{   # get characters with same pronounciation with last character
    (@collection?rmChengyuEntry$collection[rand @collection]:undef, $pron);
 }
 
+sub chengyuIndex{	# -1 on lookup failure
+   my $word=shift;
+   first_index {!($word cmp $_)} @chengyu;
+}
+
 sub main{
    annotateChengyuPinyin;
    use Encode 'decode';
    my ($cnt,$prev,$prev2,$counter,$pron,$cur,%history)=2;
    if(@ARGV>1){
-	$cur=decode 'utf8',$ARGV[1];
-	$counter=first_index{!($cur cmp $_)} @chengyu;
-	defined $counter?
-	   $cur=dualvar($counter,$cur) : undef $cur;
+	$counter=chengyuIndex $cur=decode 'utf8',$ARGV[1];
+	$cur=defined $counter ? dualvar($counter,$cur) : undef;
    }
    $cur//=$chengyu[rand @chengyu];
-   printf "[1  ]%-6s %s\n",'',rmChengyuEntry($cur);
+   printf "[1  ]%-6s %s\n", '', rmChengyuEntry $cur;
    $history{1}=$cur;
    until($cnt>$ARGV[0]){
 	$prev2=$prev; $prev=$cur;
@@ -181,18 +184,33 @@ sub main{
    }
    open my $fd,'<:utf8', 'ChineseChengyu.txt'	# definition lookup
 	or croak 'Cannot open ChineseChengyu.txt';
-   print "词义解释：\n\$";
+   print "词义解释：\n\$"; $prev=0;
    while(<STDIN>){
-	my $option=$_;
-	print '?' unless(looks_like_number $option);
-	next unless defined $history{0+$option};
+	my ($option,$index)=$_;
+	if(looks_like_number($option)){
+	   $index=$history{0+$option};
+	}else{
+	   if(!$prev){ # filling @chengyu holes
+		seek $fd,0,0; $counter=0;
+		while(<$fd>){
+		   $_=~s/\s.*\n//;
+		   next if /$^/;
+		   $chengyu[$counter]//=dualvar $counter,$_;
+		   ++$counter;
+		}
+		$prev=1;
+	   }
+	   $index=chengyuIndex decode('utf8',substr($option,0,-1));
+	}
+	unless(defined $index and $index>=0){
+	   print "?\n\$"; next;
+	}
 	seek $fd,0,0; $cnt=0;
-	while($cnt<$history{0+$option}){
+	while($cnt<$index){
 	   next if <$fd>=~/^\s*$/;
 	   ++$cnt;
 	}
-	print $_=<$fd>;
-	print '$';
+	print $_=<$fd>.'$';
    }
    close $fd;
    defined $cur;
