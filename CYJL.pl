@@ -66,7 +66,7 @@ sub buildPY2Chr{
 sub transPyNum{
    state %PyNum;
    my ($py,$num)=(shift,0);
-   return $PyNum{$py} if defined $PyNum{$py};
+   return $PyNum{$py} if exists $PyNum{$py};
    $num=$num*26+(ord substr $py,$_,1)-ord('a') for 0..length($py)-1;
    $num*=26 for length $py .. 6;
    $PyNum{$py}=$num;
@@ -114,9 +114,9 @@ sub buildChYu{
    close $fd;
 }
 
-sub rmChengyuEntry{  # from array
-   my $word=shift;
-   undef $chengyu[$word+0];
+sub rmChengyuEntry{  # undef a word from array by 
+   my $word=shift;   # negating its numerical value.
+   $chengyu[$word]=dualvar -$chengyu[$word],$chengyu[$word] unless $chengyu[$word]<0;
    $word;
 }
 
@@ -125,15 +125,14 @@ sub nextChengyu{   # get characters with same pronounciation with last character
    my $lastCh=substr $word,-1;
    my ($candy,$counter,$pron)=(\@{$chengyu{$lastCh}}, 0);
    if(defined $candy){	# prioritize Chengyu with same leading character
-	if(any {defined $$_} @$candy){
+	if(any {$$_>=0} @$candy){
 	   my ($index, $word);
 	   do{	   # pick an available chengyu
 		$index=rand @{$candy};
 		$word=$$candy[$index];
-	   }until defined $$word;
-	   $pron=$chengyu1stPY[last_index {$$word+0>=$_+0} @chengyu1stPY].'';
-	   undef $$candy[$index];
-	   undef @$candy unless any {defined $$_} @$candy;
+	   }until $$word>=0;
+	   $pron=$chengyu1stPY[last_index {$$word>=$_} @chengyu1stPY];
+	   undef $candy unless any {$$_>=0} @$candy;
 	   return (rmChengyuEntry($$word), $pron);
 	}
    }
@@ -141,9 +140,9 @@ sub nextChengyu{   # get characters with same pronounciation with last character
    do{   # pick one pronounciation for last character
 	$pron=$$prons[rand @$prons];
 	carp "$lastCh not found in dictionary??" if !defined $pron;
-	$index=first_index {!($pron cmp $_.'')} @chengyu1stPY;
+	$index=first_index {!($pron cmp $_.'') && $_>=0} @chengyu1stPY;
 	for(($chengyu1stPY[$index]+0)..($chengyu1stPY[$index+1]+0)){
-	   push @collection, $chengyu[$_] if defined $chengyu[$_];
+	   push @collection, $chengyu[$_] if $chengyu[$_]>=0;
 	}
 	++$tries;
    }until @collection or $tries>@$prons;
@@ -161,7 +160,7 @@ sub main{
    my ($cnt,$prev,$prev2,$counter,$pron,$cur,%history)=2;
    if(@ARGV>1){
 	$counter=chengyuIndex $cur=decode 'utf8',$ARGV[1];
-	$cur=defined $counter ? dualvar($counter,$cur) : undef;
+	$cur=defined $counter ? dualvar $counter,$cur : undef;
    }
    $cur//=$chengyu[rand @chengyu];
    printf "[1  ]%-6s %s\n", '', rmChengyuEntry $cur;
@@ -170,7 +169,7 @@ sub main{
 	$prev2=$prev; $prev=$cur;
 	($cur,$pron)=nextChengyu $cur;
 	printf "[%-3d]%-6s ",$cnt++,$pron;
-	print defined($cur) ? "$cur\n" : "...继续无力\n";
+	print defined $cur ? "$cur\n" : "...继续无力\n";
 	if(defined $cur){
 	   $history{$cnt-1}=$cur; next;
 	}
@@ -185,30 +184,15 @@ sub main{
    open my $fd,'<:utf8', 'ChineseChengyu.txt'	# definition lookup
 	or croak 'Cannot open ChineseChengyu.txt';
    print "词义解释：\n\$"; $prev=0;
-   while(<STDIN>){
-	my ($option,$index)=$_;
-	if(looks_like_number($option)){
-	   $index=$history{0+$option};
-	}else{
-	   if(!$prev){ # filling @chengyu holes
-		seek $fd,0,0; $counter=0;
-		while(<$fd>){
-		   $_=~s/\s.*\n//;
-		   next if /$^/;
-		   $chengyu[$counter]//=dualvar $counter,$_;
-		   ++$counter;
-		}
-		$prev=1;
-	   }
-	   $index=chengyuIndex decode('utf8',substr($option,0,-1));
-	}
+   while(my $option=<STDIN>){
+	my $index=looks_like_number($option) ? $history{0+$option} :
+	   chengyuIndex decode 'utf8',substr $option,0,-1;
 	unless(defined $index and $index>=0){
 	   print "?\n\$"; next;
 	}
-	seek $fd,0,0; $cnt=0;
+	seek $fd,$cnt=0,0;
 	while($cnt<$index){
-	   next if <$fd>=~/^\s*$/;
-	   ++$cnt;
+	   next if <$fd>=~/^\s*$/; ++$cnt;
 	}
 	print $_=<$fd>.'$';
    }
